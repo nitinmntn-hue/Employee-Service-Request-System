@@ -1,0 +1,320 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ======================================
+// ENUMS
+// ======================================
+
+enum UserRole {
+  EMPLOYEE
+  SUPPORT_STAFF
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+}
+
+enum RequestStatus {
+  OPEN
+  ASSIGNED
+  IN_PROGRESS
+  ON_HOLD
+  RESOLVED
+  CLOSED
+  REJECTED
+}
+
+enum RequestPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum NotificationType {
+  REQUEST_CREATED
+  REQUEST_ASSIGNED
+  STATUS_CHANGED
+  NEW_COMMENT
+  SLA_WARNING
+  SLA_BREACHED
+}
+
+// ======================================
+// USER
+// ======================================
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  name         String
+  email        String     @unique
+  passwordHash String
+  role         UserRole   @default(EMPLOYEE)
+  status       UserStatus @default(ACTIVE)
+
+  departmentId String?     @db.Uuid
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  // Requests submitted by this user
+  submittedRequests ServiceRequest[] @relation("Requester")
+
+  // Assignments
+  assignments Assignment[] @relation("AssignedTo")
+  assignedBy  Assignment[] @relation("AssignedBy")
+
+  // Other relations
+  comments      Comment[]
+  attachments   Attachment[]
+  notifications Notification[]
+  activityLogs  ActivityLog[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([role])
+  @@index([status])
+  @@index([departmentId])
+}
+
+// ======================================
+// DEPARTMENT
+// ======================================
+
+model Department {
+  id          String  @id @default(uuid()) @db.Uuid
+  name        String  @unique
+  description String?
+  isActive    Boolean @default(true)
+
+  users      User[]
+  categories Category[]
+  requests   ServiceRequest[]
+  slas       SLA[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([isActive])
+}
+
+// ======================================
+// CATEGORY
+// ======================================
+
+model Category {
+  id           String  @id @default(uuid()) @db.Uuid
+  name         String
+  description  String?
+  departmentId String  @db.Uuid
+  isActive     Boolean @default(true)
+
+  department Department       @relation(fields: [departmentId], references: [id])
+  requests   ServiceRequest[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([name, departmentId])
+  @@index([departmentId])
+  @@index([isActive])
+}
+
+// ======================================
+// SERVICE REQUEST
+// ======================================
+
+model ServiceRequest {
+  id          String @id @default(uuid()) @db.Uuid
+  requestCode String @unique
+  title       String
+  description String
+
+  status   RequestStatus   @default(OPEN)
+  priority RequestPriority @default(MEDIUM)
+
+  requesterId  String  @db.Uuid
+  departmentId String  @db.Uuid
+  categoryId   String  @db.Uuid
+  slaId        String? @db.Uuid
+
+  requester  User       @relation("Requester", fields: [requesterId], references: [id])
+  department Department @relation(fields: [departmentId], references: [id])
+  category   Category   @relation(fields: [categoryId], references: [id])
+  sla        SLA?       @relation(fields: [slaId], references: [id])
+
+  assignments   Assignment[]
+  comments      Comment[]
+  attachments   Attachment[]
+  notifications Notification[]
+  activityLogs  ActivityLog[]
+
+  responseDueAt   DateTime? @db.Timestamptz(3)
+  resolutionDueAt DateTime? @db.Timestamptz(3)
+  resolvedAt      DateTime? @db.Timestamptz(3)
+  closedAt        DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([requesterId, createdAt])
+  @@index([status, priority])
+  @@index([departmentId])
+  @@index([categoryId])
+  @@index([resolutionDueAt])
+  @@index([createdAt])
+}
+
+// ======================================
+// ASSIGNMENT
+// ======================================
+
+model Assignment {
+  id           String @id @default(uuid()) @db.Uuid
+  requestId    String @db.Uuid
+  assigneeId   String @db.Uuid
+  assignedById String @db.Uuid
+
+  note         String?
+  isActive     Boolean   @default(true)
+  assignedAt   DateTime  @default(now()) @db.Timestamptz(3)
+  unassignedAt DateTime? @db.Timestamptz(3)
+
+  request ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  assignee User @relation("AssignedTo", fields: [assigneeId], references: [id])
+
+  assignedBy User @relation("AssignedBy", fields: [assignedById], references: [id])
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([requestId])
+  @@index([assigneeId])
+  @@index([assignedById])
+  @@index([isActive])
+  @@index([assignedAt])
+}
+
+// ======================================
+// COMMENT
+// ======================================
+
+model Comment {
+  id         String  @id @default(uuid()) @db.Uuid
+  content    String
+  isInternal Boolean @default(false)
+
+  requestId String @db.Uuid
+  authorId  String @db.Uuid
+
+  request ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  author User @relation(fields: [authorId], references: [id])
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([requestId, createdAt])
+  @@index([authorId])
+}
+
+// ======================================
+// ATTACHMENT
+// ======================================
+
+model Attachment {
+  id         String @id @default(uuid()) @db.Uuid
+  fileName   String
+  mimeType   String
+  sizeBytes  Int
+  storageKey String
+
+  requestId    String @db.Uuid
+  uploadedById String @db.Uuid
+
+  request ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  uploadedBy User @relation(fields: [uploadedById], references: [id])
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([requestId])
+  @@index([uploadedById])
+}
+
+// ======================================
+// SLA
+// ======================================
+
+model SLA {
+  id                String          @id @default(uuid()) @db.Uuid
+  priority          RequestPriority
+  responseMinutes   Int
+  resolutionMinutes Int
+
+  departmentId String?     @db.Uuid
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  requests ServiceRequest[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([departmentId, priority])
+  @@index([priority])
+  @@index([departmentId])
+}
+
+// ======================================
+// NOTIFICATION
+// ======================================
+
+model Notification {
+  id      String           @id @default(uuid()) @db.Uuid
+  title   String
+  message String
+  type    NotificationType
+  isRead  Boolean          @default(false)
+
+  userId    String  @db.Uuid
+  requestId String? @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  request ServiceRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, isRead, createdAt])
+  @@index([requestId])
+}
+
+// ======================================
+// ACTIVITY LOG
+// ======================================
+
+model ActivityLog {
+  id        String  @id @default(uuid()) @db.Uuid
+  action    String
+  details   Json?
+  actorId   String? @db.Uuid
+  requestId String? @db.Uuid
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  request ServiceRequest? @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([actorId])
+  @@index([requestId])
+  @@index([createdAt])
+  @@index([action])
+}

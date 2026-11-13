@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Next.js
+client/.next/
+client/out/
+
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.local.example
+
+client/.env*
+!client/.env.example
+
+server/.env*
+!server/.env.example
+
+# Prisma generated client
+server/src/generated/prisma/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Build files
+dist/
+build/
+
+# Editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
